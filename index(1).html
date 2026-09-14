@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17191C">
+<title>Quicklabel</title>
+<link rel="manifest" href='data:application/manifest+json,{"name":"Quicklabel","short_name":"Quicklabel","start_url":".","display":"standalone","background_color":"%2317191C","theme_color":"%2317191C","icons":[{"src":"data:image/svg%2Bxml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 192 192%27%3E%3Crect width=%27192%27 height=%27192%27 rx=%2740%27 fill=%27%2317191C%27/%3E%3Crect x=%2732%27 y=%2764%27 width=%27128%27 height=%2764%27 rx=%278%27 fill=%27%23FDFDFB%27/%3E%3Crect x=%2748%27 y=%2782%27 width=%2780%27 height=%2710%27 fill=%27%2317191C%27/%3E%3Crect x=%2748%27 y=%27100%27 width=%2752%27 height=%278%27 fill=%27%23555%27/%3E%3C/svg%3E","sizes":"192x192","type":"image/svg+xml"}]}'>
+<style>
+  :root{
+    --bg:#17191C; --surface:#202429; --surface2:#2A2F35; --line:#383E45;
+    --text:#E8EAED; --dim:#98A0A9; --amber:#F0A202; --amber-dk:#B87A02;
+    --live:#4ADE80; --dead:#5A626B; --paper:#FDFDFB;
+    --r:10px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0; height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font:400 15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    letter-spacing:-0.005em;
+    display:flex; flex-direction:column;
+    padding-bottom:env(safe-area-inset-bottom);
+    overscroll-behavior:none;
+  }
+  button,input,select,textarea{font:inherit; color:inherit}
+  button{border:0; background:none; cursor:pointer}
+  :focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+
+  /* ---- status bar ---- */
+  .bar{
+    display:flex; align-items:center; gap:10px;
+    padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+    border-bottom:1px solid var(--line); background:var(--surface);
+    position:sticky; top:0; z-index:5;
+  }
+  .lamp{width:9px; height:9px; border-radius:50%; background:var(--dead); flex:none;
+        transition:background .2s, box-shadow .2s}
+  .lamp.on{background:var(--live); box-shadow:0 0 0 4px rgba(74,222,128,.15)}
+  .lamp.busy{background:var(--amber); animation:pulse .8s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.lamp.busy{animation:none}}
+  #status{flex:1; min-width:0; font-size:13.5px; color:var(--dim);
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .btn-sm{padding:7px 13px; border-radius:8px; background:var(--surface2);
+          border:1px solid var(--line); font-size:13.5px; font-weight:500}
+  .btn-sm:active{background:#343A41}
+
+  /* ---- preview ---- */
+  .stage{
+    padding:22px 16px; display:flex; justify-content:center; align-items:center;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #1E2126 0%, var(--bg) 70%);
+    border-bottom:1px solid var(--line);
+  }
+  .paper{
+    background:var(--paper); border-radius:3px;
+    box-shadow:0 1px 0 rgba(255,255,255,.35) inset, 0 8px 22px -6px rgba(0,0,0,.6);
+    max-width:100%; display:block;
+  }
+  #preview{display:block; width:100%; height:auto; border-radius:3px}
+
+  /* ---- panels ---- */
+  .panel{padding:14px 16px; border-bottom:1px solid var(--line)}
+  .row{display:flex; gap:8px; align-items:center}
+  .row + .row{margin-top:10px}
+  label.f{display:flex; flex-direction:column; gap:5px; flex:1; min-width:0}
+  .cap{font-size:12px; color:var(--dim)}
+  input[type=text],textarea,select{
+    width:100%; background:var(--bg); border:1px solid var(--line);
+    border-radius:8px; padding:10px 11px; resize:none;
+  }
+  textarea{min-height:76px; line-height:1.35}
+  input[type=range]{width:100%; accent-color:var(--amber)}
+  select{appearance:none; padding-right:28px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 15px) 50%, calc(100% - 10px) 50%;
+    background-size:5px 5px, 5px 5px; background-repeat:no-repeat}
+
+  /* segmented + chips */
+  .seg{display:flex; background:var(--bg); border:1px solid var(--line);
+       border-radius:9px; padding:3px; gap:3px}
+  .seg button{flex:1; padding:8px 4px; border-radius:6px; font-size:13.5px;
+              color:var(--dim); font-weight:500}
+  .seg button[aria-selected=true]{background:var(--surface2); color:var(--text)}
+  .chips{display:flex; gap:7px; overflow-x:auto; padding-bottom:2px;
+         scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none; padding:7px 12px; border-radius:999px; font-size:13px;
+        border:1px solid var(--line); background:var(--bg); color:var(--dim);
+        font-variant-numeric:tabular-nums}
+  .chip[aria-pressed=true]{border-color:var(--amber); color:var(--text);
+        background:rgba(240,162,2,.1)}
+  .toggle{display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--dim)}
+  .toggle input{accent-color:var(--amber); width:17px; height:17px}
+
+  /* ---- print ---- */
+  .printbar{padding:14px 16px; display:flex; gap:10px}
+  #print{
+    flex:1; padding:17px; border-radius:12px; font-size:17px; font-weight:650;
+    letter-spacing:-.01em; background:var(--amber); color:#1A1408;
+  }
+  #print:active{background:var(--amber-dk)}
+  #print:disabled{background:var(--surface2); color:var(--dead)}
+  #copies{width:74px; border-radius:12px; text-align:center; background:var(--bg);
+          border:1px solid var(--line); font-variant-numeric:tabular-nums}
+
+  /* ---- recents ---- */
+  .recents{padding:0 16px 18px}
+  .recents h2{font-size:12px; color:var(--dim); font-weight:500; margin:0 0 9px}
+  .rec{display:flex; gap:7px; overflow-x:auto; scrollbar-width:none}
+  .rec::-webkit-scrollbar{display:none}
+  .rec-item{flex:none; display:flex; align-items:center; gap:9px;
+    background:var(--surface); border:1px solid var(--line); border-radius:9px;
+    padding:8px 10px; max-width:200px}
+  .rec-item .t{font-size:13.5px; white-space:nowrap; overflow:hidden;
+               text-overflow:ellipsis; max-width:130px}
+  .rec-item .x{color:var(--dim); font-size:16px; line-height:1; padding:0 2px}
+  .empty{font-size:13.5px; color:var(--dim)}
+
+  details.adv{border-top:1px solid var(--line)}
+  details.adv summary{padding:13px 16px; font-size:13.5px; color:var(--dim);
+                      cursor:pointer; list-style:none}
+  details.adv summary::-webkit-details-marker{display:none}
+  details.adv summary::before{content:"▸ "; }
+  details.adv[open] summary::before{content:"▾ "}
+  .hidden{display:none !important}
+  .note{font-size:12.5px; color:var(--dim); line-height:1.5; margin:10px 0 0}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="lamp" id="lamp"></span>
+  <span id="status">Not connected</span>
+  <button class="btn-sm" id="connect">Connect</button>
+</div>
+
+<div class="stage">
+  <div class="paper" id="paperWrap"><canvas id="preview"></canvas></div>
+</div>
+
+<div class="panel">
+  <div class="cap" style="margin-bottom:7px">Label size</div>
+  <div class="chips" id="sizes"></div>
+</div>
+
+<div class="panel">
+  <div class="seg" id="mode" role="tablist">
+    <button role="tab" data-m="text" aria-selected="true">Text</button>
+    <button role="tab" data-m="qr" aria-selected="false">QR</button>
+    <button role="tab" data-m="barcode" aria-selected="false">Barcode</button>
+    <button role="tab" data-m="image" aria-selected="false">Image</button>
+  </div>
+
+  <div class="row" style="margin-top:12px">
+    <label class="f">
+      <span class="cap" id="mainLabel">Label text</span>
+      <textarea id="text" placeholder="Coffee beans&#10;roasted 12 Apr"></textarea>
+    </label>
+  </div>
+
+  <div class="row" id="codeRow" style="display:none">
+    <label class="f">
+      <span class="cap" id="codeLabel">QR contents</span>
+      <input type="text" id="codeData" placeholder="https://example.com">
+    </label>
+  </div>
+
+  <div class="row" id="imageRow" style="display:none">
+    <label class="f">
+      <span class="cap">Picture</span>
+      <input type="file" id="file" accept="image/*">
+    </label>
+  </div>
+
+  <div class="row">
+    <label class="f">
+      <span class="cap">Font</span>
+      <select id="font">
+        <option value="sans">Sans</option>
+        <option value="condensed">Condensed</option>
+        <option value="serif">Serif</option>
+        <option value="mono">Mono</option>
+      </select>
+    </label>
+    <label class="f">
+      <span class="cap">Align</span>
+      <select id="align">
+        <option value="center">Centre</option>
+        <option value="left">Left</option>
+        <option value="right">Right</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="row">
+    <label class="f">
+      <span class="cap">Text size <span id="sizeVal">auto</span></span>
+      <input type="range" id="fsize" min="0" max="64" value="0">
+    </label>
+    <label class="toggle" style="padding-top:16px"><input type="checkbox" id="bold" checked> Bold</label>
+  </div>
+</div>
+
+<div class="printbar">
+  <button id="print" disabled>Print</button>
+  <input type="text" id="copies" value="1" inputmode="numeric" aria-label="Copies">
+</div>
+
+<div class="recents">
+  <h2>Reprint</h2>
+  <div class="rec" id="rec"><span class="empty">Printed labels get saved here.</span></div>
+</div>
+
+<details class="adv">
+  <summary>Printer settings</summary>
+  <div class="panel" style="border-bottom:0">
+    <div class="row">
+      <label class="f"><span class="cap">Density</span>
+        <select id="density">
+          <option value="1">Light</option>
+          <option value="3" selected>Normal</option>
+          <option value="5">Dark</option>
+        </select>
+      </label>
+      <label class="f"><span class="cap">Rotation</span>
+        <select id="rot">
+          <option value="270" selected>270°</option>
+          <option value="90">90°</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <label class="f"><span class="cap">Chunk bytes <span id="chunkVal">128</span></span>
+        <input type="range" id="chunk" min="20" max="240" step="20" value="128"></label>
+      <label class="f"><span class="cap">Chunk delay <span id="delayVal">6</span>ms</span>
+        <input type="range" id="delay" min="0" max="40" step="2" value="6"></label>
+    </div>
+    <div class="row">
+      <label class="toggle"><input type="checkbox" id="dither"> Dither photos</label>
+      <label class="toggle"><input type="checkbox" id="showAll"> Show all Bluetooth devices</label>
+    </div>
+    <p class="note">If labels come out upside down, switch rotation. If prints cut off or stall,
+      lower the chunk size and raise the delay. Density is the printer's burn setting.</p>
+  </div>
+</details>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.6/JsBarcode.all.min.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+   Phomemo D30 — protocol constants
+   Head is 96 dots wide (12 bytes) at 203 dpi = 8 dots/mm.
+   The 12 mm axis of the label runs across the head, so the
+   canvas is composed in reading orientation then rotated.
+   ============================================================ */
+
+const DPMM = 8;           // dots per mm at 203 dpi
+const HEAD_BYTES = 12;    // 96 dots
+const HEAD_DOTS  = HEAD_BYTES * 8;
+
+const INIT = [
+  0x1f,0x11,0x38,
+  0x1f,0x11,0x12,  0x1f,0x11,0x13,
+  0x1f,0x11,0x09,
+  0x1f,0x11,0x11,
+  0x1f,0x11,0x19,
+  0x1f,0x11,0x07,
+  0x1f,0x11,0x0a,  0x1f,0x11,0x02,0x02,
+];
+
+// 1f1124 00 | 1b40 (ESC @) | 1d7630 00 (GS v 0) | xL xH | yL yH
+function rasterHeader(widthBytes, heightDots){
+  return [
+    0x1f,0x11,0x24,0x00,
+    0x1b,0x40,
+    0x1d,0x76,0x30,0x00,
+    widthBytes & 0xff, (widthBytes >> 8) & 0xff,
+    heightDots & 0xff, (heightDots >> 8) & 0xff,
+  ];
+}
+const densityCmd = n => [0x1f,0x11,0x02,n & 0xff];
+
+// Candidate GATT profiles, probed in order.
+const PROFILES = [
+  { s:'0000ff00-0000-1000-8000-00805f9b34fb', c:'0000ff02-0000-1000-8000-00805f9b34fb' },
+  { s:'49535343-fe7d-4ae5-8fa9-9fafd205e455', c:'49535343-8841-43f4-a8d4-ecbe34729bb3' },
+  { s:'e7810a71-73ae-499d-8c15-faa9aef0c3f2', c:'bef8d6c9-9c21-4c9e-b632-bd58c1009f9f' },
+  { s:'000018f0-0000-1000-8000-00805f9b34fb', c:'00002af1-0000-1000-8000-00805f9b34fb' },
+];
+
+const SIZES = [
+  [40,12],[30,12],[22,12],[12,12],[30,14],[22,14],[40,15],[30,15],[50,30]
+];
+
+const FONTS = {
+  sans:      'system-ui, "Roboto", sans-serif',
+  condensed: '"Roboto Condensed", "Arial Narrow", system-ui, sans-serif',
+  serif:     'Georgia, "Noto Serif", serif',
+  mono:      '"Roboto Mono", ui-monospace, monospace',
+};
+
+/* ============================================================
+   State
+   ============================================================ */
+
+const $ = id => document.getElementById(id);
+const state = {
+  size: [40,12], mode: 'text',
+  device: null, chr: null, printing: false,
+  bitmap: null,          // ImageBitmap for image mode
+};
+
+/* ============================================================
+   Composition — draw the label in reading orientation
+   ============================================================ */
+
+function labelCanvas(){
+  const [lenMm, hMm] = state.size;
+  const W = Math.round(lenMm * DPMM);
+  const H = Math.round(hMm  * DPMM);
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+
+  g.fillStyle = '#fff'; g.fillRect(0,0,W,H);
+  g.fillStyle = '#000';
+
+  const pad = Math.max(2, Math.round(H * 0.07));
+  const inner = { x:pad, y:pad, w:W - pad*2, h:H - pad*2 };
+
+  // Left-hand graphic block (QR / barcode / picture)
+  let gw = 0;
+  if (state.mode === 'qr')          gw = drawQR(g, inner);
+  else if (state.mode === 'barcode')gw = drawBarcode(g, inner);
+  else if (state.mode === 'image')  gw = drawPicture(g, inner);
+
+  // Text fills whatever is left
+  const tx = inner.x + (gw ? gw + pad : 0);
+  const tw = inner.w - (gw ? gw + pad : 0);
+  if (tw > 8) drawText(g, { x:tx, y:inner.y, w:tw, h:inner.h });
+
+  return cv;
+}
+
+function drawText(g, box){
+  const lines = ($('text').value || '').split('\n').filter(l => l.trim() !== '');
+  if (!lines.length) return;
+
+  const family = FONTS[$('font').value];
+  const weight = $('bold').checked ? '700' : '400';
+  const manual = +$('fsize').value;
+
+  // Fit: largest size where every line fits the width and the stack fits the height
+  let fs = manual || 200;
+  const lh = 1.16;
+  for (; fs > 5; fs--){
+    g.font = `${weight} ${fs}px ${family}`;
+    if (lines.length * fs * lh > box.h) { if (manual) break; else continue; }
+    if (Math.max(...lines.map(l => g.measureText(l).width)) > box.w) { if (manual) break; else continue; }
+    break;
+  }
+  g.font = `${weight} ${fs}px ${family}`;
+  g.textBaseline = 'middle';
+
+  const align = $('align').value;
+  g.textAlign = align;
+  const ax = align === 'left' ? box.x : align === 'right' ? box.x + box.w : box.x + box.w/2;
+  const total = lines.length * fs * lh;
+  let y = box.y + (box.h - total)/2 + (fs * lh)/2;
+  for (const line of lines){ g.fillText(line, ax, y); y += fs * lh; }
+}
+
+function drawQR(g, box){
+  const data = $('codeData').value.trim();
+  if (!data || typeof qrcode === 'undefined') return 0;
+  let q;
+  try { q = qrcode(0, 'M'); q.addData(data); q.make(); }
+  catch(e){ return 0; }
+  const n = q.getModuleCount();
+  const cell = Math.max(1, Math.floor(box.h / n));
+  const side = cell * n;
+  const oy = box.y + Math.round((box.h - side)/2);
+  for (let r=0;r<n;r++) for (let c=0;c<n;c++)
+    if (q.isDark(r,c)) g.fillRect(box.x + c*cell, oy + r*cell, cell, cell);
+  return side;
+}
+
+function drawBarcode(g, box){
+  const data = $('codeData').value.trim();
+  if (!data || typeof JsBarcode === 'undefined') return 0;
+  const tmp = document.createElement('canvas');
+  try {
+    JsBarcode(tmp, data, {
+      format:'CODE128', displayValue:false, margin:0,
+      width:2, height: Math.round(box.h), background:'#fff', lineColor:'#000'
+    });
+  } catch(e){ return 0; }
+  const w = Math.min(tmp.width, Math.round(box.w * 0.62));
+  g.drawImage(tmp, box.x, box.y, w, box.h);
+  return w;
+}
+
+function drawPicture(g, box){
+  if (!state.bitmap) return 0;
+  const bm = state.bitmap;
+  const scale = Math.min(box.w/bm.width, box.h/bm.height);
+  const w = Math.round(bm.width*scale), h = Math.round(bm.height*scale);
+  g.drawImage(bm, box.x, box.y + Math.round((box.h-h)/2), w, h);
+  return w;
+}
+
+/* ============================================================
+   Raster: threshold / dither, rotate, pack to 1bpp
+   ============================================================ */
+
+function toMono(cv){
+  const g = cv.getContext('2d');
+  const img = g.getImageData(0,0,cv.width,cv.height);
+  const d = img.data, W = cv.width, H = cv.height;
+  const lum = new Float32Array(W*H);
+  for (let i=0, p=0; i<d.length; i+=4, p++)
+    lum[p] = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+
+  const useDither = $('dither').checked && state.mode === 'image';
+  const out = new Uint8Array(W*H);   // 1 = burn (black)
+  if (useDither){
+    for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+      const p = y*W+x, old = lum[p], nv = old < 128 ? 0 : 255;
+      out[p] = nv ? 0 : 1;
+      const err = old - nv;
+      if (x+1<W)            lum[p+1]     += err*7/16;
+      if (y+1<H && x>0)     lum[p+W-1]   += err*3/16;
+      if (y+1<H)            lum[p+W]     += err*5/16;
+      if (y+1<H && x+1<W)   lum[p+W+1]   += err*1/16;
+    }
+  } else {
+    for (let p=0;p<lum.length;p++) out[p] = lum[p] < 128 ? 1 : 0;
+  }
+  return { bits: out, W, H };
+}
+
+// Rotate the bit grid so the head axis becomes the row axis.
+function rotate(m, deg){
+  const { bits, W, H } = m;
+  const nW = H, nH = W;
+  const out = new Uint8Array(nW*nH);
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){
+    const v = bits[y*W+x];
+    if (!v) continue;
+    // 270°: (x,y) -> (y, W-1-x).  90°: (x,y) -> (H-1-y, x)
+    const nx = deg === 270 ? y : (H-1-y);
+    const ny = deg === 270 ? (W-1-x) : x;
+    out[ny*nW+nx] = 1;
+  }
+  return { bits: out, W: nW, H: nH };
+}
+
+function pack(m){
+  const bytesPerRow = Math.min(HEAD_BYTES, Math.ceil(m.W/8));
+  const buf = new Uint8Array(bytesPerRow * m.H);
+  let o = 0;
+  for (let y=0;y<m.H;y++){
+    for (let b=0;b<bytesPerRow;b++){
+      let byte = 0;
+      for (let k=0;k<8;k++){
+        const x = b*8+k;
+        if (x < m.W && m.bits[y*m.W+x]) byte |= (0x80 >> k);
+      }
+      buf[o++] = byte;
+    }
+  }
+  return { buf, bytesPerRow, rows: m.H };
+}
+
+function buildJob(){
+  const cv   = labelCanvas();
+  const mono = toMono(cv);
+  const rot  = rotate(mono, +$('rot').value);
+  const { buf, bytesPerRow, rows } = pack(rot);
+
+  const out = [];
+  out.push(...INIT);
+  out.push(...densityCmd(+$('density').value));
+  out.push(...rasterHeader(bytesPerRow, rows));
+  const head = new Uint8Array(out);
+  const job  = new Uint8Array(head.length + buf.length);
+  job.set(head, 0); job.set(buf, head.length);
+  return job;
+}
+
+/* ============================================================
+   Bluetooth
+   ============================================================ */
+
+function setStatus(msg, cls){
+  $('status').textContent = msg;
+  $('lamp').className = 'lamp' + (cls ? ' ' + cls : '');
+}
+
+async function connect(){
+  if (!navigator.bluetooth){
+    setStatus('This browser has no Web Bluetooth — use Chrome');
+    return;
+  }
+  const services = PROFILES.map(p => p.s);
+  try {
+    setStatus('Choosing device…', 'busy');
+    const device = await navigator.bluetooth.requestDevice(
+      $('showAll').checked
+        ? { acceptAllDevices:true, optionalServices:services }
+        : { filters:[{namePrefix:'D30'},{namePrefix:'PM'},{namePrefix:'Phomemo'}],
+            optionalServices:services }
+    );
+    await attach(device);
+  } catch(e){
+    setStatus(e.name === 'NotFoundError' ? 'No printer picked' : 'Connect failed: ' + e.message);
+  }
+}
+
+async function attach(device){
+  setStatus('Connecting to ' + (device.name || 'printer') + '…', 'busy');
+  device.addEventListener('gattserverdisconnected', onDrop);
+  const server = await device.gatt.connect();
+
+  let chr = null;
+  for (const p of PROFILES){
+    try {
+      const svc = await server.getPrimaryService(p.s);
+      chr = await svc.getCharacteristic(p.c);
+      break;
+    } catch(e){ /* try next profile */ }
+  }
+  if (!chr){
+    // Last resort: any writable characteristic on any service
+    for (const svc of await server.getPrimaryServices()){
+      for (const c of await svc.getCharacteristics()){
+        if (c.properties.write || c.properties.writeWithoutResponse){ chr = c; break; }
+      }
+      if (chr) break;
+    }
+  }
+  if (!chr){ setStatus('Connected, but found no way to send data'); return; }
+
+  state.device = device; state.chr = chr;
+  $('connect').textContent = 'Disconnect';
+  $('print').disabled = false;
+  setStatus((device.name || 'Printer') + ' ready', 'on');
+}
+
+function onDrop(){
+  state.chr = null;
+  $('connect').textContent = 'Connect';
+  $('print').disabled = true;
+  setStatus('Printer disconnected');
+}
+
+async function send(bytes){
+  const chunk = +$('chunk').value, wait = +$('delay').value;
+  const noResp = state.chr.properties.writeWithoutResponse;
+  for (let i=0; i<bytes.length; i+=chunk){
+    const slice = bytes.slice(i, i+chunk);
+    if (noResp) await state.chr.writeValueWithoutResponse(slice);
+    else        await state.chr.writeValueWithResponse(slice);
+    if (wait) await new Promise(r => setTimeout(r, wait));
+  }
+}
+
+async function print(){
+  if (!state.chr || state.printing) return;
+  state.printing = true;
+  $('print').disabled = true;
+  const copies = Math.max(1, Math.min(20, parseInt($('copies').value) || 1));
+  try {
+    const job = buildJob();
+    for (let n=1; n<=copies; n++){
+      setStatus(copies > 1 ? `Printing ${n} of ${copies}…` : 'Printing…', 'busy');
+      await send(job);
+      if (n < copies) await new Promise(r => setTimeout(r, 400));
+    }
+    setStatus('Printed', 'on');
+    saveRecent();
+  } catch(e){
+    setStatus('Print failed: ' + e.message);
+  } finally {
+    state.printing = false;
+    $('print').disabled = !state.chr;
+  }
+}
+
+/* ============================================================
+   Recents — the actual speed feature
+   ============================================================ */
+
+const KEY = 'quicklabel.recents';
+const loadRecents = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch(e){ return []; } };
+
+function saveRecent(){
+  if (state.mode === 'image') return;   // pictures aren't worth storing
+  const snap = {
+    text: $('text').value, code: $('codeData').value, mode: state.mode,
+    size: state.size, font: $('font').value, align: $('align').value,
+    bold: $('bold').checked, fsize: +$('fsize').value,
+  };
+  const title = (snap.text.split('\n')[0] || snap.code || 'Label').slice(0,40);
+  if (!title.trim()) return;
+  const list = loadRecents().filter(r => JSON.stringify(r.snap) !== JSON.stringify(snap));
+  list.unshift({ title, snap });
+  localStorage.setItem(KEY, JSON.stringify(list.slice(0,20)));
+  renderRecents();
+}
+
+function renderRecents(){
+  const list = loadRecents(), el = $('rec');
+  el.innerHTML = '';
+  if (!list.length){
+    el.innerHTML = '<span class="empty">Printed labels get saved here.</span>';
+    return;
+  }
+  list.forEach((r, i) => {
+    const d = document.createElement('div'); d.className = 'rec-item';
+    const b = document.createElement('button'); b.className = 't'; b.textContent = r.title;
+    b.onclick = () => { restore(r.snap); };
+    const x = document.createElement('button'); x.className = 'x'; x.textContent = '×';
+    x.setAttribute('aria-label', 'Remove ' + r.title);
+    x.onclick = () => {
+      const l = loadRecents(); l.splice(i,1);
+      localStorage.setItem(KEY, JSON.stringify(l)); renderRecents();
+    };
+    d.append(b, x); el.append(d);
+  });
+}
+
+function restore(s){
+  $('text').value = s.text; $('codeData').value = s.code;
+  $('font').value = s.font; $('align').value = s.align;
+  $('bold').checked = s.bold; $('fsize').value = s.fsize;
+  state.size = s.size; state.mode = s.mode;
+  syncMode(); renderSizes(); redraw();
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+/* ============================================================
+   UI wiring
+   ============================================================ */
+
+function renderSizes(){
+  const box = $('sizes'); box.innerHTML = '';
+  SIZES.forEach(sz => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.textContent = `${sz[0]}×${sz[1]}`;
+    b.setAttribute('aria-pressed', String(sz[0] === state.size[0] && sz[1] === state.size[1]));
+    b.onclick = () => { state.size = sz; renderSizes(); redraw(); };
+    box.append(b);
+  });
+}
+
+function syncMode(){
+  [...$('mode').children].forEach(b =>
+    b.setAttribute('aria-selected', String(b.dataset.m === state.mode)));
+  const isCode = state.mode === 'qr' || state.mode === 'barcode';
+  $('codeRow').style.display  = isCode ? 'flex' : 'none';
+  $('imageRow').style.display = state.mode === 'image' ? 'flex' : 'none';
+  $('codeLabel').textContent  = state.mode === 'qr' ? 'QR contents' : 'Barcode number';
+  $('codeData').placeholder   = state.mode === 'qr' ? 'https://example.com' : '012345678905';
+  $('mainLabel').textContent  = isCode || state.mode === 'image' ? 'Caption' : 'Label text';
+}
+
+function redraw(){
+  const cv = labelCanvas();
+  const pv = $('preview');
+  pv.width = cv.width; pv.height = cv.height;
+  pv.getContext('2d').drawImage(cv, 0, 0);
+  // Cap displayed width so short labels don't blow up
+  const wrap = $('paperWrap');
+  wrap.style.width = Math.min(cv.width * 3.2, window.innerWidth - 32) + 'px';
+  $('sizeVal').textContent = +$('fsize').value === 0 ? 'auto' : $('fsize').value + 'px';
+  $('chunkVal').textContent = $('chunk').value;
+  $('delayVal').textContent = $('delay').value;
+}
+
+$('mode').onclick = e => {
+  const b = e.target.closest('button[data-m]'); if (!b) return;
+  state.mode = b.dataset.m; syncMode(); redraw();
+};
+['text','codeData','font','align','fsize','bold','dither','chunk','delay']
+  .forEach(id => { $(id).addEventListener('input', redraw); });
+
+$('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  state.bitmap = await createImageBitmap(f);
+  redraw();
+};
+
+$('connect').onclick = () => {
+  if (state.chr){ state.device.gatt.disconnect(); onDrop(); }
+  else connect();
+};
+$('print').onclick = print;
+
+// Re-pair silently on reload where the browser allows it
+(async () => {
+  try {
+    const known = await navigator.bluetooth.getDevices();
+    if (known && known.length) {
+      setStatus('Tap Connect to wake ' + (known[0].name || 'the printer'));
+    }
+  } catch(e){ /* getDevices unsupported — fine */ }
+})();
+
+window.addEventListener('resize', redraw);
+renderSizes(); syncMode(); renderRecents(); redraw();
+</script>
+</body>
+</html>
