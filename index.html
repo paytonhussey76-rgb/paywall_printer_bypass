@@ -293,7 +293,7 @@ const PROFILES = [
 ];
 
 const SIZES = [
-  [40,12],[30,12],[22,12],[12,12],[30,14],[22,14],[40,15],[30,15],[50,30]
+  [50,14],[40,12],[30,12],[22,12],[12,12],[30,14],[22,14],[40,15],[30,15],[50,30]
 ];
 
 const FONTS = {
@@ -329,8 +329,12 @@ function labelCanvas(){
   g.fillStyle = '#fff'; g.fillRect(0,0,W,H);
   g.fillStyle = '#000';
 
-  const pad = Math.max(2, Math.round(H * 0.07));
-  const inner = { x:pad, y:pad, w:W - pad*2, h:H - pad*2 };
+  // Only the central 96 dots (12 mm) can actually be burned by the head, so on a
+  // 14 or 15 mm label the content has to live inside a centred band, not the whole face.
+  const bandH   = Math.min(H, HEAD_DOTS);
+  const bandTop = Math.round((H - bandH) / 2);
+  const pad = Math.max(2, Math.round(bandH * 0.07));
+  const inner = { x:pad, y:bandTop + pad, w:W - pad*2, h:bandH - pad*2 };
 
   // Left-hand graphic block (QR / barcode / picture)
   let gw = 0;
@@ -461,13 +465,15 @@ function rotate(m, deg){
 
 function pack(m){
   const bytesPerRow = Math.min(HEAD_BYTES, Math.ceil(m.W/8));
+  // Anything wider than the 96-dot head gets centred under it, not lopped off one side.
+  const off = Math.max(0, Math.floor((m.W - bytesPerRow*8) / 2));
   const buf = new Uint8Array(bytesPerRow * m.H);
   let o = 0;
   for (let y=0;y<m.H;y++){
     for (let b=0;b<bytesPerRow;b++){
       let byte = 0;
       for (let k=0;k<8;k++){
-        const x = b*8+k;
+        const x = off + b*8 + k;
         if (x < m.W && m.bits[y*m.W+x]) byte |= (0x80 >> k);
       }
       buf[o++] = byte;
@@ -673,7 +679,15 @@ function redraw(){
   const cv = labelCanvas();
   const pv = $('preview');
   pv.width = cv.width; pv.height = cv.height;
-  pv.getContext('2d').drawImage(cv, 0, 0);
+  const g = pv.getContext('2d');
+  g.drawImage(cv, 0, 0);
+  // Grey out the strips the head physically cannot reach, so the preview tells the truth
+  if (cv.height > HEAD_DOTS){
+    const band = (cv.height - HEAD_DOTS) / 2;
+    g.fillStyle = 'rgba(20,24,28,.13)';
+    g.fillRect(0, 0, cv.width, band);
+    g.fillRect(0, cv.height - band, cv.width, band);
+  }
   // Cap displayed width so short labels don't blow up
   const wrap = $('paperWrap');
   wrap.style.width = Math.min(cv.width * 3.2, window.innerWidth - 32) + 'px';
